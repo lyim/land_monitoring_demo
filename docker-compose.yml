@@ -1,0 +1,52 @@
+# docker-compose.yml
+version: "3.8"
+
+services:
+  mongo:
+    image: mongo:6
+    container_name: geo-mongo
+    restart: always
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  fastapi:
+    build: .
+    container_name: geo-fastapi
+    depends_on:
+      - mongo
+    ports:
+      - "8000:8000"
+    environment:
+      - MONGO_URI=mongodb://mongo:27017/
+    volumes:
+      - .:/app
+
+  mongo-express:
+    image: mongo-express
+    container_name: geo-mongo-express
+    depends_on:
+      - mongo
+    restart: always
+    ports:
+      - "8081:8081"
+    environment:
+      - ME_CONFIG_MONGODB_SERVER=mongo
+      - ME_CONFIG_BASICAUTH_USERNAME=admin
+      - ME_CONFIG_BASICAUTH_PASSWORD=admin123
+      - ME_CONFIG_MONGODB_PORT=27017
+      - ME_CONFIG_MONGODB_ENABLE_ADMIN=true
+      - ME_CONFIG_MONGODB_AUTH_DATABASE=admin
+
+  generator:
+    build: .
+    container_name: geo-generator
+    depends_on:
+      - mongo
+    environment:
+      - MONGO_URI=mongodb://mongo:27017/
+    command: ["python", "data_generator.py"]
+
+volumes:
+  mongo_data:
