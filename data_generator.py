@@ -26,7 +26,7 @@ def generate_random_point():
 
 def generate_displacement_record():
     return {
-        "timestamp": datetime.utcnow(),
+        "timestamp": datetime.now(),
         "sensor_id": f"radar-{random.randint(1, 5)}",
         "location": generate_random_point(),
         "displacement": {

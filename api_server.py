@@ -1,10 +1,10 @@
 # api_server.py
 from fastapi import FastAPI, Query
-from typing import List
+from typing import List, Optional
 from pymongo import MongoClient
 from bson import json_util
 from fastapi.responses import JSONResponse
-from datetime import datetime
+from datetime import datetime, timedelta
 import traceback
 from fastapi.responses import Response
 from bson import json_util
@@ -94,7 +94,9 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
 
 app = FastAPI()
 # client = MongoClient("mongodb://localhost:27017/")
-MONGO_URI = os.environ.get("MONGO_URI", "mongodb://localhost:27017/")
+# client = MongoClient("mongodb://mongo:27017/")
+# MONGO_URI = os.environ.get("MONGO_URI", "mongodb://localhost:27017/")
+MONGO_URI = os.environ.get("MONGO_URI", "mongodb://mongo:27017/")
 client = MongoClient(MONGO_URI)
 collection = client["geo_monitoring"]["displacement_data"]
 
@@ -204,6 +206,63 @@ def aggregate_displacement(
     result = list(collection.aggregate(pipeline))
     # return JSONResponse(content=json_util.loads(json_util.dumps(result)))
     return Response(content=json_util.dumps(result), media_type="application/json")
+
+@app.get("/stats/average_displacement")
+def average_displacement(
+    lon: float = Query(..., description="Center longitude"),
+    lat: float = Query(..., description="Center latitude"),
+    radius: int = Query(1000, description="Radius in meters"),
+    minutes: int = Query(60, description="Time window in minutes")
+):
+    from bson.son import SON
+
+    cutoff_time = datetime.now() - timedelta(minutes=minutes)
+
+    pipeline = [
+        {
+            "$geoNear": {
+                "near": {
+                    "type": "Point",
+                    "coordinates": [lon, lat]
+                },
+                "distanceField": "dist.calculated",
+                "maxDistance": radius,
+                "spherical": True,
+                "query": {
+                    "timestamp": {"$gte": cutoff_time}
+                }
+            }
+        },
+        {
+            "$group": {
+                "_id": None,
+                "avg_x": {"$avg": "$displacement.x"},
+                "avg_y": {"$avg": "$displacement.y"},
+                "avg_z": {"$avg": "$displacement.z"},
+                "count": {"$sum": 1}
+            }
+        }
+    ]
+
+    result = list(collection.aggregate(pipeline))
+    if result:
+        return {
+            "sensor_count": result[0]["count"],
+            "avg_displacement": {
+                "x": round(result[0]["avg_x"], 3),
+                "y": round(result[0]["avg_y"], 3),
+                "z": round(result[0]["avg_z"], 3)
+            }
+        }
+    else:
+        return {
+            "sensor_count": 0,
+            "avg_displacement": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+            }
+        }
 
 @app.post("/token", response_model=Token)
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
