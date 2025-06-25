@@ -16,6 +16,8 @@ from pydantic import BaseModel
 from fastapi import Depends, HTTPException, status
 from fastapi.openapi.utils import get_openapi
 import os
+from fastapi import UploadFile, File
+from s3_utils import upload_file_to_s3
 
 # ==== 安全配置 ====
 SECRET_KEY = "your-secret-key-please-change"
@@ -98,7 +100,9 @@ app = FastAPI()
 # MONGO_URI = os.environ.get("MONGO_URI", "mongodb://localhost:27017/")
 MONGO_URI = os.environ.get("MONGO_URI", "mongodb://mongo:27017/")
 client = MongoClient(MONGO_URI)
-collection = client["geo_monitoring"]["displacement_data"]
+# collection = client["geo_monitoring"]["displacement_data"]
+db = client["geo_monitoring"]
+collection = db["displacement_data"]
 
 @app.get("/displacement/recent")
 def get_recent_displacement(
@@ -275,6 +279,24 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
         )
     access_token = create_access_token(data={"sub": user.username})
     return {"access_token": access_token, "token_type": "bearer"}
+
+@app.post("/upload_file")
+def upload_file(file: UploadFile = File(...)):
+    file_url = upload_file_to_s3(file.file, file.filename, file.content_type)
+
+    # 存入 Mongo：记录文件名、时间、url
+    record = {
+        "filename": file.filename,
+        "upload_time": datetime.now(),
+        "content_type": file.content_type,
+        "url": file_url
+    }
+    db["file_records"].insert_one(record)
+
+    return {
+        "message": "File uploaded successfully",
+        "url": file_url
+    }
 
 def custom_openapi():
     if app.openapi_schema:
